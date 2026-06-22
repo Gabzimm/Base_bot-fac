@@ -15,7 +15,7 @@ class KeepAliveServer:
         self.site = None
     
     async def start_simple(self):
-        """Inicia um servidor web simples na porta 10000"""
+        """Inicia um servidor web simples na porta 90000"""
         try:
             self.app = web.Application()
             
@@ -35,11 +35,11 @@ class KeepAliveServer:
             await self.runner.setup()
             
             # Usar porta 10000 para evitar conflito
-            self.site = web.TCPSite(self.runner, '0.0.0.0', 10000)
+            self.site = web.TCPSite(self.runner, '0.0.0.0', 90000)
             await self.site.start()
             
-            print(f"🌐 Keep-alive iniciado na porta 10000")
-            print(f"📊 Health check: https://{os.getenv('RENDER_EXTERNAL_HOSTNAME', 'localhost')}:10000/health")
+            print(f"🌐 Keep-alive iniciado na porta 90000")
+            print(f"📊 Health check: https://{os.getenv('RENDER_EXTERNAL_HOSTNAME', 'localhost')}:90000/health")
             
         except Exception as e:
             print(f"⚠️ Não foi possível iniciar keep-alive: {e}")
@@ -153,9 +153,11 @@ async def load_cogs():
     
     # Lista de módulos
     cogs = [
-        'modules.sets',
-        'modules.cargos',
-        'ausencia.py',
+        'utils.memory',
+        'modules.adm_system',
+        'modules.setss',
+        'modules.cargoss',
+        'modules.painel_rec',
     ]
     
     carregados = 0
