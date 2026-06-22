@@ -5,6 +5,9 @@ import asyncio
 from datetime import datetime
 import re
 
+# ========== IMPORTS DO SISTEMA DE MEMÓRIA ==========
+from utils.memory import save_recruitment
+
 # ========== CONFIGURAÇÃO ==========
 STAFF_ROLES = [
     "👑 | Lider | 00",
@@ -129,15 +132,15 @@ class SetStaffView(ui.View):
             if self.recrutador_nome:
                 embed.description += f"\n✅ **Recrutado por:** {self.recrutador_nome}"
             
-            # Disparar evento para o painel de recrutadores
+            # ========== NOVO: Atualizar painel via sistema de memória ==========
             if self.recrutador_id and self.recrutador_nome:
-                interaction.client.dispatch('recrutamento_contabilizar', {
-                    'recrutador_id': self.recrutador_id,
-                    'recrutador_nome': self.recrutador_nome,
-                    'recrutado_id': self.user_id,
-                    'recrutado_nome': member.name,
-                    'data': datetime.now().isoformat()
-                })
+                try:
+                    painel_cog = interaction.client.get_cog("PainelRec")
+                    if painel_cog:
+                        await painel_cog.atualizar_paineis_do_guild(interaction.guild.id)
+                        print(f"🔄 Painel atualizado após aprovação de set por {interaction.user.name}")
+                except Exception as e:
+                    print(f"⚠️ Erro ao atualizar painel: {e}")
             
             self.clear_items()
             await interaction.message.edit(embed=embed, view=self)
@@ -216,7 +219,7 @@ class SetForm(ui.Modal, title="📝 Pedido de Set"):
     
     recrutador = ui.TextInput(
         label="3. ID de quem te recrutou (OBRIGATÓRIO):",
-        placeholder="Ex: 9237",
+        placeholder="Ex: 19309",
         required=True,
         max_length=20
     )
@@ -290,15 +293,27 @@ class SetForm(ui.Modal, title="📝 Pedido de Set"):
             else:
                 recrutador_nome = recrutador_member.name
 
-            # Adicionar ao painel de recrutadores (com ID do recruta)
-            painel_cog = interaction.client.get_cog("PainelRec")
-            if painel_cog:
-                painel_cog.adicionar_recrutamento(
-                    recrutador_member.id,
-                    recrutador_nome,
-                    interaction.user.id,
-                    interaction.user.name
-                )
+            # ========== NOVO: Salvar na memória persistente ==========
+            sucesso = save_recruitment(
+                interaction.guild.id,
+                recrutador_member.id,
+                recrutador_nome,
+                interaction.user.id,
+                interaction.user.name
+            )
+            
+            if sucesso:
+                print(f"✅ Recrutamento salvo na memória: {recrutador_nome} → {interaction.user.name}")
+                
+                # Atualizar painel se estiver carregado
+                try:
+                    painel_cog = interaction.client.get_cog("PainelRec")
+                    if painel_cog:
+                        await painel_cog.atualizar_paineis_do_guild(interaction.guild.id)
+                except Exception as e:
+                    print(f"⚠️ Erro ao atualizar painel: {e}")
+            else:
+                print(f"⚠️ Recrutamento NÃO salvo (possível duplicata): {recrutador_nome} → {interaction.user.name}")
             
             descricao = (
                 f"**👤 Discord:** {interaction.user.mention}\n"
@@ -441,11 +456,11 @@ class SetsCog(commands.Cog, name="Sets"):
         
         embed.add_field(
             name="🤝 Como encontrar ID do Recrutador?",
-            value="Procure no nickname da pessoa: `00| Torres | 9237`\nO número após o último '|' é o ID do FiveM",
+            value="Procure no nickname da pessoa: `01 | Rafael | 19309`\nO número após o último '|' é o ID do FiveM",
             inline=False
         )
         
-        embed.set_image(url="https://cdn.discordapp.com/attachments/1473746931003035801/1474722296920015000/image.png")
+        embed.set_image(url="https://media.discordapp.net/attachments/1441849588620460225/1474167151387742230/Copia_de_Copia_de_Copia_de_Copia_de_banner.gif?ex=69d235e5&is=69d0e465&hm=ab7b4a462bc6816cba72481378c27aead64a339482a719cbc83e76a5c144a8fb&=")
         embed.set_footer(text="Sistema automático • WaveX")
         
         view = SetOpenView()
