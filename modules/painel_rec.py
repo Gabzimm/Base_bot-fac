@@ -22,7 +22,7 @@ from utils.memory import (
 )
 
 # ========== CONFIGURAÇÃO ==========
-# Cargos de staff (mesmos do sistema de cargos)
+# Cargos de staff
 STAFF_ROLES = [
     "👑 | Lider | 00",
     "💎 | Lider | 01",
@@ -45,15 +45,13 @@ def normalizar_nome(nome: str) -> str:
     return re.sub(r'\s+', '', nome)
 
 def usuario_pode_usar_painel(member: discord.Member) -> bool:
-    """Verifica se o usuário pode usar o painel (mesmo sistema do cargos.py)"""
+    """Verifica se o usuário pode usar o painel"""
     if not member:
         return False
     
-    # Admin sempre pode
     if member.guild_permissions.administrator:
         return True
     
-    # Verificar se tem cargo staff (com normalização)
     for role in member.roles:
         for cargo_staff in STAFF_ROLES:
             if normalizar_nome(role.name) == normalizar_nome(cargo_staff):
@@ -74,7 +72,6 @@ class GerenciadorRecrutadores:
     def adicionar_recrutamento(self, recrutador_id, recrutador_nome, recruta_id, recruta_nome):
         """Adiciona um novo recruta via sistema de memória"""
         if not self.guild_id:
-            print("❌ Guild ID não definido!")
             return False
         return save_recruitment(self.guild_id, recrutador_id, recrutador_nome, recruta_id, recruta_nome)
     
@@ -134,7 +131,6 @@ class GerenciadorRecrutadores:
         if not history:
             return []
         
-        # Buscar nomes dos recrutadores
         stats = get_recruitment_stats(self.guild_id)
         recruiters = stats.get('recruiters', {})
         
@@ -181,12 +177,11 @@ class GerenciadorRecrutadores:
         """Retorna número de recrutadores ativos no mês atual"""
         if not self.guild_id:
             return 0
-        top = self.get_top_recrutadores()
-        return len(top)
+        return len(self.get_top_recrutadores())
 
-# ========== VIEW DO PAINEL PRINCIPAL COM PAGINAÇÃO ==========
+# ========== VIEW DO PAINEL PRINCIPAL ==========
 class PainelRecView(ui.View):
-    """View com botões para o painel principal com paginação"""
+    """View com botões para o painel principal com paginação (SEM botão RCs Pagos)"""
     
     def __init__(self, gerenciador):
         super().__init__(timeout=None)
@@ -197,7 +192,7 @@ class PainelRecView(ui.View):
     def criar_embed_pagina(self, guild, pagina):
         """Cria o embed para uma página específica"""
         todos_recrutadores = self.gerenciador.get_top_recrutadores()
-        total_paginas = (len(todos_recrutadores) + self.recrutadores_por_pagina - 1) // self.recrutadores_por_pagina
+        total_paginas = max(1, (len(todos_recrutadores) + self.recrutadores_por_pagina - 1) // self.recrutadores_por_pagina)
         
         inicio = pagina * self.recrutadores_por_pagina
         fim = inicio + self.recrutadores_por_pagina
@@ -218,7 +213,6 @@ class PainelRecView(ui.View):
                 inline=False
             )
         else:
-            # Mostrar recrutadores da página
             posicao_inicial = inicio + 1
             for i, rec in enumerate(recrutadores_pagina, posicao_inicial):
                 display_nome = rec['nome']
@@ -226,7 +220,6 @@ class PainelRecView(ui.View):
                 if membro:
                     display_nome = membro.mention
                 
-                # Medalhas para os top 3 independente da página
                 if i == 1:
                     medalha = "🥇"
                 elif i == 2:
@@ -263,13 +256,9 @@ class PainelRecView(ui.View):
     
     @ui.button(label="◀ Anterior", style=ButtonStyle.secondary, custom_id="painel_rec_anterior", row=0)
     async def anterior(self, interaction: discord.Interaction, button: ui.Button):
-        """Vai para a página anterior"""
         if not usuario_pode_usar_painel(interaction.user):
             await interaction.response.send_message("❌ Você não tem permissão!", ephemeral=True)
             return
-        
-        todos_recrutadores = self.gerenciador.get_top_recrutadores()
-        total_paginas = (len(todos_recrutadores) + self.recrutadores_por_pagina - 1) // self.recrutadores_por_pagina
         
         if self.pagina > 0:
             self.pagina -= 1
@@ -278,56 +267,14 @@ class PainelRecView(ui.View):
         else:
             await interaction.response.send_message("❌ Você já está na primeira página!", ephemeral=True)
     
-    @ui.button(label="💰 RCs Pagos", style=ButtonStyle.success, custom_id="painel_rec_pagos", row=0)
-    async def rcs_pagos(self, interaction: discord.Interaction, button: ui.Button):
-        """Abre o painel de gerenciamento de RCs pagos"""
-        
-        # Verificar se pode usar o painel
-        if not usuario_pode_usar_painel(interaction.user):
-            await interaction.response.send_message("❌ Você não tem permissão para acessar este painel!", ephemeral=True)
-            return
-        
-        # Criar select com todos os recrutadores
-        todos_recrutadores = self.gerenciador.get_top_recrutadores()
-        
-        if not todos_recrutadores:
-            await interaction.response.send_message("❌ Nenhum recrutador encontrado!", ephemeral=True)
-            return
-        
-        options = []
-        for rec in todos_recrutadores[:25]:  # Limitar a 25 opções
-            label = f"{rec['nome']} - {rec['total']} recrutas"
-            membro = interaction.guild.get_member(int(rec['id']))
-            if membro:
-                label = f"{membro.display_name} - {rec['total']} recrutas"
-            
-            options.append(
-                discord.SelectOption(
-                    label=label[:100],
-                    value=rec['id'],
-                    description=f"Total: {rec['total']} recrutas"
-                )
-            )
-        
-        select = RecrutadorSelect(self.gerenciador, options, interaction.guild)
-        view = ui.View(timeout=60)
-        view.add_item(select)
-        
-        await interaction.response.send_message(
-            "**Selecione um recrutador para ver seus recrutas:**",
-            view=view,
-            ephemeral=True
-        )
-    
     @ui.button(label="Próxima ▶", style=ButtonStyle.secondary, custom_id="painel_rec_proxima", row=0)
     async def proxima(self, interaction: discord.Interaction, button: ui.Button):
-        """Vai para a próxima página"""
         if not usuario_pode_usar_painel(interaction.user):
             await interaction.response.send_message("❌ Você não tem permissão!", ephemeral=True)
             return
         
         todos_recrutadores = self.gerenciador.get_top_recrutadores()
-        total_paginas = (len(todos_recrutadores) + self.recrutadores_por_pagina - 1) // self.recrutadores_por_pagina
+        total_paginas = max(1, (len(todos_recrutadores) + self.recrutadores_por_pagina - 1) // self.recrutadores_por_pagina)
         
         if self.pagina < total_paginas - 1:
             self.pagina += 1
@@ -338,19 +285,14 @@ class PainelRecView(ui.View):
     
     @ui.button(label="📊 Histórico", style=ButtonStyle.primary, custom_id="painel_rec_historico", row=1)
     async def historico(self, interaction: discord.Interaction, button: ui.Button):
-        """Mostra o histórico do mês passado e recordes"""
-        
-        # Verificar se pode usar o painel
         if not usuario_pode_usar_painel(interaction.user):
-            await interaction.response.send_message("❌ Você não tem permissão para acessar este painel!", ephemeral=True)
+            await interaction.response.send_message("❌ Você não tem permissão!", ephemeral=True)
             return
         
-        # Buscar dados
         top_mes_passado = self.gerenciador.get_top_mes_passado(3)
         recordes_gerais = self.gerenciador.get_recordes_gerais(3)
         recordista = self.gerenciador.get_recordista_geral()
         
-        # Calcular mês passado
         mes_passado = self.gerenciador.get_mes_passado_key()
         mes_atual = self.gerenciador.get_mes_atual_key()
         
@@ -359,7 +301,6 @@ class PainelRecView(ui.View):
             color=discord.Color.blue()
         )
         
-        # Mês passado
         if top_mes_passado:
             valor_mes = ""
             for i, rec in enumerate(top_mes_passado, 1):
@@ -382,7 +323,6 @@ class PainelRecView(ui.View):
                 inline=False
             )
         
-        # Recordes históricos
         if recordes_gerais:
             valor_recordes = ""
             for i, rec in enumerate(recordes_gerais, 1):
@@ -399,7 +339,6 @@ class PainelRecView(ui.View):
                 inline=False
             )
         
-        # Recordista geral
         if recordista:
             display_nome = recordista['nome']
             membro = interaction.guild.get_member(int(recordista['id']))
@@ -412,7 +351,6 @@ class PainelRecView(ui.View):
                 inline=False
             )
         
-        # Estatísticas do mês atual
         total_mes = self.gerenciador.get_total_geral_mes()
         embed.add_field(
             name="📈 **MÊS ATUAL**",
@@ -425,246 +363,14 @@ class PainelRecView(ui.View):
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-class RecrutadorSelect(ui.Select):
-    """Select menu para escolher recrutador"""
-    
-    def __init__(self, gerenciador, options, guild):
-        self.gerenciador = gerenciador
-        self.guild = guild
-        super().__init__(
-            placeholder="Escolha um recrutador...",
-            min_values=1,
-            max_values=1,
-            options=options
-        )
-    
-    async def callback(self, interaction: discord.Interaction):
-        recrutador_id = self.values[0]
-        
-        # Buscar o membro pelo ID para ter a menção
-        recrutador_member = self.guild.get_member(int(recrutador_id))
-        
-        # Buscar nome do recrutador
-        recrutador_nome = "Desconhecido"
-        stats = get_recruitment_stats(self.gerenciador.guild_id)
-        recruiters = stats.get('recruiters', {})
-        if recrutador_id in recruiters:
-            recrutador_nome = recruiters[recrutador_id].get("nome", "Desconhecido")
-        
-        # Criar view de recrutas
-        view_recrutas = RecrutasPagosView(self.gerenciador, recrutador_id, recrutador_nome, recrutador_member)
-        embed = view_recrutas.criar_embed()
-        
-        await interaction.response.edit_message(
-            embed=embed,
-            view=view_recrutas
-        )
-
-# ========== VIEW DO PAINEL DE RECRUTAS ==========
-class RecrutasPagosView(ui.View):
-    """View para mostrar e gerenciar recrutas de um recrutador"""
-    
-    def __init__(self, gerenciador, recrutador_id, recrutador_nome, recrutador_member=None):
-        super().__init__(timeout=120)
-        self.gerenciador = gerenciador
-        self.recrutador_id = recrutador_id
-        self.recrutador_nome = recrutador_nome
-        self.recrutador_member = recrutador_member
-        self.pagina = 0
-        self.recrutas_por_pagina = 5
-    
-    def criar_embed(self):
-        """Cria o embed com a lista de recrutas"""
-        recrutas = self.gerenciador.get_recrutas_por_recrutador(self.recrutador_id)
-        
-        if not recrutas:
-            if self.recrutador_member:
-                titulo = f"📋 Recrutas de {self.recrutador_member.mention}"
-            else:
-                titulo = f"📋 Recrutas de {self.recrutador_nome}"
-            
-            embed = discord.Embed(
-                title=titulo,
-                description="Este recrutador ainda não tem recrutas.",
-                color=discord.Color.blue()
-            )
-            return embed
-        
-        # Calcular página
-        inicio = self.pagina * self.recrutas_por_pagina
-        fim = inicio + self.recrutas_por_pagina
-        recrutas_pagina = recrutas[inicio:fim]
-        
-        # Contar pagos
-        total_pagos = sum(1 for r in recrutas if r["pago"])
-        total_recrutas = len(recrutas)
-        
-        if self.recrutador_member:
-            titulo = f"📋 Recrutas de {self.recrutador_member.mention}"
-        else:
-            titulo = f"📋 Recrutas de {self.recrutador_nome}"
-        
-        embed = discord.Embed(
-            title=titulo,
-            description=f"Total: **{total_recrutas}** recrutas | Pagos: **{total_pagos}**",
-            color=discord.Color.blue()
-        )
-        
-        for recruta in recrutas_pagina:
-            status = "✅ PAGO" if recruta["pago"] else "⏳ PAGAR"
-            
-            recruta_mention = recruta["nome"]
-            if self.recrutador_member and self.recrutador_member.guild:
-                membro = self.recrutador_member.guild.get_member(int(recruta["id"]))
-                if membro:
-                    recruta_mention = membro.mention
-            
-            embed.add_field(
-                name=recruta_mention,
-                value=f"Status: {status}\nData: {recruta['data']}",
-                inline=False
-            )
-        
-        total_paginas = (len(recrutas) + self.recrutas_por_pagina - 1) // self.recrutas_por_pagina
-        embed.set_footer(text=f"Página {self.pagina + 1} de {total_paginas}")
-        
-        return embed
-    
-    @ui.button(label="◀ Anterior", style=ButtonStyle.secondary, custom_id="recrutas_anterior")
-    async def anterior(self, interaction: discord.Interaction, button: ui.Button):
-        recrutas = self.gerenciador.get_recrutas_por_recrutador(self.recrutador_id)
-        total_paginas = (len(recrutas) + self.recrutas_por_pagina - 1) // self.recrutas_por_pagina
-        
-        if self.pagina > 0:
-            self.pagina -= 1
-            await interaction.response.edit_message(embed=self.criar_embed(), view=self)
-        else:
-            await interaction.response.send_message("❌ Você já está na primeira página!", ephemeral=True)
-    
-    @ui.button(label="Próxima ▶", style=ButtonStyle.secondary, custom_id="recrutas_proxima")
-    async def proxima(self, interaction: discord.Interaction, button: ui.Button):
-        recrutas = self.gerenciador.get_recrutas_por_recrutador(self.recrutador_id)
-        total_paginas = (len(recrutas) + self.recrutas_por_pagina - 1) // self.recrutas_por_pagina
-        
-        if self.pagina < total_paginas - 1:
-            self.pagina += 1
-            await interaction.response.edit_message(embed=self.criar_embed(), view=self)
-        else:
-            await interaction.response.send_message("❌ Você já está na última página!", ephemeral=True)
-    
-    @ui.button(label="✅ Marcar como Pago", style=ButtonStyle.success, custom_id="recrutas_marcar_pago")
-    async def marcar_pago(self, interaction: discord.Interaction, button: ui.Button):
-        if not usuario_pode_usar_painel(interaction.user):
-            await interaction.response.send_message("❌ Você não tem permissão para marcar recrutas como pagos!", ephemeral=True)
-            return
-        
-        recrutas = self.gerenciador.get_recrutas_por_recrutador(self.recrutador_id)
-        recrutas_pagina = recrutas[self.pagina * self.recrutas_por_pagina:(self.pagina + 1) * self.recrutas_por_pagina]
-        
-        select = RecrutaSelect(self.gerenciador, recrutas_pagina, self, interaction.guild)
-        view = ui.View(timeout=60)
-        view.add_item(select)
-        
-        await interaction.response.send_message(
-            "**Selecione o recruta para marcar como PAGO:**",
-            view=view,
-            ephemeral=True
-        )
-    
-    @ui.button(label="🔙 Voltar", style=ButtonStyle.gray, custom_id="recrutas_voltar")
-    async def voltar(self, interaction: discord.Interaction, button: ui.Button):
-        """Volta para a seleção de recrutadores"""
-        todos_recrutadores = self.gerenciador.get_top_recrutadores()
-        
-        options = []
-        for rec in todos_recrutadores[:25]:
-            label = f"{rec['nome']} - {rec['total']} recrutas"
-            membro = interaction.guild.get_member(int(rec['id']))
-            if membro:
-                label = f"{membro.display_name} - {rec['total']} recrutas"
-            
-            options.append(
-                discord.SelectOption(
-                    label=label[:100],
-                    value=rec['id'],
-                    description=f"Total: {rec['total']} recrutas"
-                )
-            )
-        
-        select = RecrutadorSelect(self.gerenciador, options, interaction.guild)
-        view = ui.View(timeout=60)
-        view.add_item(select)
-        
-        await interaction.response.edit_message(
-            content="**Selecione um recrutador para ver seus recrutas:**",
-            embed=None,
-            view=view
-        )
-
-class RecrutaSelect(ui.Select):
-    """Select menu para escolher recruta"""
-    
-    def __init__(self, gerenciador, recrutas, view_principal, guild):
-        self.gerenciador = gerenciador
-        self.view_principal = view_principal
-        self.guild = guild
-        
-        options = []
-        for recruta in recrutas:
-            if not recruta["pago"]:
-                label = recruta["nome"][:100]
-                membro = guild.get_member(int(recruta["id"]))
-                if membro:
-                    label = membro.display_name[:100]
-                
-                options.append(
-                    discord.SelectOption(
-                        label=label,
-                        value=recruta["id"],
-                        description=f"Recrutado em {recruta['data']}"
-                    )
-                )
-        
-        if not options:
-            options.append(
-                discord.SelectOption(
-                    label="Nenhum recruta para marcar",
-                    value="none",
-                    description="Todos já estão pagos!"
-                )
-            )
-        
-        super().__init__(
-            placeholder="Escolha um recruta...",
-            min_values=1,
-            max_values=1,
-            options=options
-        )
-    
-    async def callback(self, interaction: discord.Interaction):
-        if self.values[0] == "none":
-            await interaction.response.send_message("❌ Não há recrutas para marcar como pagos!", ephemeral=True)
-            return
-        
-        recruta_id = self.values[0]
-        self.gerenciador.marcar_como_pago(recruta_id)
-        
-        # Atualizar view principal
-        await interaction.edit_original_response(
-            embed=self.view_principal.criar_embed(),
-            view=self.view_principal
-        )
-        
-        await interaction.followup.send("✅ Recruta marcado como PAGO com sucesso!", ephemeral=True)
-
 # ========== COG PRINCIPAL ==========
 class PainelRecCog(commands.Cog, name="PainelRec"):
     """Sistema de Painel de Recrutadores"""
     
     def __init__(self, bot):
         self.bot = bot
-        self.gerenciador = GerenciadorRecrutadores()  # Sem guild_id inicial
-        self.paineis_ativos = {}  # {guild_id: {"canal_id": canal_id, "mensagem_id": mensagem_id}}
+        self.gerenciador = GerenciadorRecrutadores()
+        self.paineis_ativos = {}
         print("✅ Módulo PainelRec carregado!")
     
     @commands.Cog.listener()
@@ -693,6 +399,7 @@ class PainelRecCog(commands.Cog, name="PainelRec"):
                             continue
                         
                         try:
+                            self.gerenciador.set_guild(int(guild_id))
                             mensagem = await canal.fetch_message(dados["mensagem_id"])
                             self.bot.add_view(PainelRecView(self.gerenciador), message_id=mensagem.id)
                             print(f"  ✅ Painel recuperado em #{canal.name} ({guild.name})")
@@ -743,13 +450,6 @@ class PainelRecCog(commands.Cog, name="PainelRec"):
             del self.paineis_ativos[guild_key]
             self.salvar_paineis()
     
-    def adicionar_recrutamento(self, recrutador_id, recrutador_nome, recruta_id, recruta_nome):
-        """Método público para outros módulos adicionarem recrutamentos (compatibilidade)"""
-        # Este método é mantido para compatibilidade, mas não é mais necessário
-        # pois o SetsCog já salva diretamente na memória
-        print(f"⚠️ adicionar_recrutamento chamado diretamente (modo legado)")
-        return True
-    
     async def atualizar_todos_paineis(self):
         """Atualiza todos os painéis ativos"""
         print("🔄 Atualizando todos os painéis...")
@@ -765,7 +465,6 @@ class PainelRecCog(commands.Cog, name="PainelRec"):
                 
                 try:
                     mensagem = await canal.fetch_message(dados["mensagem_id"])
-                    # Criar nova view com página resetada
                     self.gerenciador.set_guild(int(guild_id))
                     self.gerenciador.verificar_novo_mes()
                     view = PainelRecView(self.gerenciador)
@@ -925,7 +624,6 @@ class ConfirmaResetView(ui.View):
         guild_key = str(self.ctx.guild.id)
         
         if guild_key in data and 'recruitments' in data[guild_key]:
-            # Manter recordes mas resetar contadores mensais
             data[guild_key]['recruitments']['recruiters'] = {}
             data[guild_key]['recruitments']['recruits'] = {}
             data[guild_key]['recruitments']['monthly_history'] = {}
