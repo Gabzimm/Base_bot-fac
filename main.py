@@ -48,7 +48,7 @@ class MeuBot(commands.Bot):
 
 bot = MeuBot()
 
-# ==================== KEEP-ALIVE SERVER (PORTA 8080) ====================
+# ==================== KEEP-ALIVE SERVER (PORTA 8082) ====================
 class KeepAliveServer:
     def __init__(self):
         self.app = None
@@ -79,8 +79,8 @@ class KeepAliveServer:
             self.runner = web.AppRunner(self.app)
             await self.runner.setup()
             
-            # MUDANÇA AQUI: Porta alterada para 8080
-            port = int(os.environ.get('PORT', 8080))  # Fallback para 8080
+            # MUDANÇA AQUI: Porta alterada para 8082
+            port = int(os.environ.get('PORT', 8082))  # Fallback para 8082
             self.site = web.TCPSite(self.runner, '0.0.0.0', port)
             await self.site.start()
             
@@ -386,9 +386,9 @@ async def main():
     keep_alive.set_bot(bot)
     bot.keep_alive = keep_alive
     
-    # Iniciar keep-alive (porta 8080)
+    # Iniciar keep-alive (porta 8082)
     try:
-        print("\n🌐 Iniciando servidor keep-alive na porta 8080...")
+        print("\n🌐 Iniciando servidor keep-alive na porta 8082...")
         await keep_alive.start()
     except Exception as e:
         print(f"⚠️ Erro no keep-alive: {e}")
