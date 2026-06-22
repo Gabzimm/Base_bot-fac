@@ -8,12 +8,20 @@ import os
 import re
 from dateutil.relativedelta import relativedelta
 
-# ========== CONFIGURAÇÃO ==========
-ARQUIVO_RECRUTADORES = "recrutadores.json"
-ARQUIVO_RECRUTAS = "recrutas.json"
-ARQUIVO_HISTORICO = "historico_recrutadores.json"
-ARQUIVO_RECORDES = "recordes.json"
+# ========== IMPORTS DO SISTEMA DE MEMÓRIA ==========
+from utils.memory import (
+    get_recruitment_stats, 
+    get_top_recruiters, 
+    get_global_record,
+    get_recruits_by_recruiter,
+    mark_recruit_as_paid,
+    check_new_month,
+    get_monthly_total,
+    get_monthly_history,
+    save_recruitment
+)
 
+# ========== CONFIGURAÇÃO ==========
 # Cargos de staff (mesmos do sistema de cargos)
 STAFF_ROLES = [
     "👑 | Lider | 00",
@@ -54,178 +62,104 @@ def usuario_pode_usar_painel(member: discord.Member) -> bool:
     return False
 
 class GerenciadorRecrutadores:
-    """Gerencia os dados de recrutadores e recrutas"""
+    """Gerencia os dados de recrutadores usando o sistema de memória"""
     
-    def __init__(self):
-        self.recrutadores = {}  # {recrutador_id: {"nome": nome, "total": 0}}
-        self.recrutas = {}  # {recruta_id: {"nome": nome, "recrutador_id": id, "pago": false, "data": ""}}
-        self.historico_mensal = {}  # {mes_ano: {recrutador_id: total}}
-        self.recordes = {}  # {recrutador_id: {"maior_mes": total, "mes": mes/ano, "nome": nome}}
-        self.carregar_dados()
-        self.verificar_novo_mes()
+    def __init__(self, guild_id: int = None):
+        self.guild_id = guild_id
     
-    def carregar_dados(self):
-        """Carrega dados do arquivo JSON"""
-        try:
-            if os.path.exists(ARQUIVO_RECRUTADORES):
-                with open(ARQUIVO_RECRUTADORES, 'r', encoding='utf-8') as f:
-                    self.recrutadores = json.load(f)
-                print(f"✅ Dados de recrutadores carregados: {len(self.recrutadores)} recrutadores")
-            
-            if os.path.exists(ARQUIVO_RECRUTAS):
-                with open(ARQUIVO_RECRUTAS, 'r', encoding='utf-8') as f:
-                    self.recrutas = json.load(f)
-                print(f"✅ Dados de recrutas carregados: {len(self.recrutas)} recrutas")
-            
-            if os.path.exists(ARQUIVO_HISTORICO):
-                with open(ARQUIVO_HISTORICO, 'r', encoding='utf-8') as f:
-                    self.historico_mensal = json.load(f)
-                print(f"✅ Histórico mensal carregado: {len(self.historico_mensal)} meses")
-            
-            if os.path.exists(ARQUIVO_RECORDES):
-                with open(ARQUIVO_RECORDES, 'r', encoding='utf-8') as f:
-                    self.recordes = json.load(f)
-                print(f"✅ Recordes carregados: {len(self.recordes)} recordes")
-                
-        except Exception as e:
-            print(f"❌ Erro ao carregar dados: {e}")
-            self.recrutadores = {}
-            self.recrutas = {}
-            self.historico_mensal = {}
-            self.recordes = {}
+    def set_guild(self, guild_id: int):
+        """Define o servidor atual"""
+        self.guild_id = guild_id
     
-    def salvar_dados(self):
-        """Salva dados no arquivo JSON"""
-        try:
-            with open(ARQUIVO_RECRUTADORES, 'w', encoding='utf-8') as f:
-                json.dump(self.recrutadores, f, indent=4, ensure_ascii=False)
-            
-            with open(ARQUIVO_RECRUTAS, 'w', encoding='utf-8') as f:
-                json.dump(self.recrutas, f, indent=4, ensure_ascii=False)
-            
-            with open(ARQUIVO_HISTORICO, 'w', encoding='utf-8') as f:
-                json.dump(self.historico_mensal, f, indent=4, ensure_ascii=False)
-            
-            with open(ARQUIVO_RECORDES, 'w', encoding='utf-8') as f:
-                json.dump(self.recordes, f, indent=4, ensure_ascii=False)
-                
-            print("✅ Dados salvos com sucesso!")
-        except Exception as e:
-            print(f"❌ Erro ao salvar dados: {e}")
+    def adicionar_recrutamento(self, recrutador_id, recrutador_nome, recruta_id, recruta_nome):
+        """Adiciona um novo recruta via sistema de memória"""
+        if not self.guild_id:
+            print("❌ Guild ID não definido!")
+            return False
+        return save_recruitment(self.guild_id, recrutador_id, recrutador_nome, recruta_id, recruta_nome)
+    
+    def get_top_recrutadores(self, limite=10):
+        """Retorna os top recrutadores do mês atual"""
+        if not self.guild_id:
+            return []
+        return get_top_recruiters(self.guild_id, limite)
+    
+    def get_recordista_geral(self):
+        """Retorna o recordista geral"""
+        if not self.guild_id:
+            return None
+        return get_global_record(self.guild_id)
+    
+    def get_recrutas_por_recrutador(self, recrutador_id):
+        """Retorna lista de recrutas de um recrutador"""
+        if not self.guild_id:
+            return []
+        return get_recruits_by_recruiter(self.guild_id, recrutador_id)
+    
+    def marcar_como_pago(self, recruta_id):
+        """Marca um recruta como pago"""
+        if not self.guild_id:
+            return False
+        return mark_recruit_as_paid(self.guild_id, recruta_id)
+    
+    def verificar_novo_mes(self):
+        """Verifica se entrou em um novo mês"""
+        if not self.guild_id:
+            return False
+        return check_new_month(self.guild_id)
+    
+    def get_total_geral_mes(self):
+        """Retorna total de recrutamentos do mês atual"""
+        if not self.guild_id:
+            return 0
+        return get_monthly_total(self.guild_id)
     
     def get_mes_atual_key(self):
-        """Retorna a chave do mês atual (MM/YYYY)"""
+        """Retorna a chave do mês atual"""
         return datetime.now().strftime('%m/%Y')
     
     def get_mes_passado_key(self):
-        """Retorna a chave do mês passado (MM/YYYY)"""
+        """Retorna a chave do mês passado"""
         mes_passado = datetime.now() - relativedelta(months=1)
         return mes_passado.strftime('%m/%Y')
     
-    def verificar_novo_mes(self):
-        """Verifica se entrou em um novo mês e arquiva os dados"""
-        mes_atual = self.get_mes_atual_key()
-        
-        # Se não temos histórico do mês atual, significa que é um novo mês
-        if mes_atual not in self.historico_mensal:
-            print(f"📅 Novo mês detectado: {mes_atual}")
-            
-            # Arquiva o mês passado se existir
-            mes_passado = self.get_mes_passado_key()
-            if mes_passado not in self.historico_mensal and self.recrutadores:
-                # Salva o snapshot do mês passado
-                snapshot = {}
-                for rid, dados in self.recrutadores.items():
-                    if dados["total"] > 0:
-                        snapshot[rid] = dados["total"]
-                
-                if snapshot:
-                    self.historico_mensal[mes_passado] = snapshot
-                    print(f"✅ Mês {mes_passado} arquivado com {len(snapshot)} recrutadores ativos")
-            
-            # Reseta os contadores do mês atual
-            for rid in self.recrutadores:
-                self.recrutadores[rid]["total"] = 0
-            
-            self.salvar_dados()
-    
-    def adicionar_recrutamento(self, recrutador_id, recrutador_nome, recruta_id, recruta_nome):
-        """Adiciona um novo recruta e atualiza o contador do recrutador"""
-        recrutador_id = str(recrutador_id)
-        recruta_id = str(recruta_id)
-        
-        # Verificar se recruta já existe
-        if recruta_id in self.recrutas:
-            print(f"⚠️ Recruta {recruta_nome} já existe!")
-            return False
-        
-        # Adicionar/atualizar recrutador
-        if recrutador_id not in self.recrutadores:
-            self.recrutadores[recrutador_id] = {
-                "nome": recrutador_nome,
-                "total": 0
-            }
-        
-        # Adicionar recruta
-        self.recrutas[recruta_id] = {
-            "nome": recruta_nome,
-            "recrutador_id": recrutador_id,
-            "pago": False,
-            "data": datetime.now().strftime('%d/%m/%Y %H:%M')
-        }
-        
-        # Incrementar total do recrutador
-        self.recrutadores[recrutador_id]["total"] += 1
-        novo_total = self.recrutadores[recrutador_id]["total"]
-        self.recrutadores[recrutador_id]["nome"] = recrutador_nome  # Atualiza nome
-        
-        # Verificar se bateu recorde pessoal
-        if recrutador_id in self.recordes:
-            if novo_total > self.recordes[recrutador_id]["maior_mes"]:
-                self.recordes[recrutador_id] = {
-                    "maior_mes": novo_total,
-                    "mes": self.get_mes_atual_key(),
-                    "nome": recrutador_nome
-                }
-                print(f"🏆 NOVO RECORDE para {recrutador_nome}: {novo_total} recrutas!")
-        else:
-            self.recordes[recrutador_id] = {
-                "maior_mes": novo_total,
-                "mes": self.get_mes_atual_key(),
-                "nome": recrutador_nome
-            }
-        
-        self.salvar_dados()
-        print(f"✅ Recruta {recruta_nome} adicionado a {recrutador_nome}")
-        return True
-    
     def get_top_mes_passado(self, limite=3):
         """Retorna os top recrutadores do mês passado"""
-        mes_passado = self.get_mes_passado_key()
-        
-        if mes_passado not in self.historico_mensal:
+        if not self.guild_id:
             return []
         
-        dados_mes = self.historico_mensal[mes_passado]
-        lista = []
+        mes_passado = self.get_mes_passado_key()
+        history = get_monthly_history(self.guild_id, mes_passado)
         
-        for rid, total in dados_mes.items():
-            nome = self.recrutadores.get(rid, {}).get("nome", "Desconhecido")
+        if not history:
+            return []
+        
+        # Buscar nomes dos recrutadores
+        stats = get_recruitment_stats(self.guild_id)
+        recruiters = stats.get('recruiters', {})
+        
+        lista = []
+        for rid, total in history.items():
+            nome = recruiters.get(rid, {}).get("nome", "Desconhecido")
             lista.append({
                 "id": rid,
                 "nome": nome,
                 "total": total
             })
         
-        # Ordenar por total (maior primeiro)
         lista.sort(key=lambda x: x["total"], reverse=True)
         return lista[:limite]
     
     def get_recordes_gerais(self, limite=3):
         """Retorna os maiores recordes de todos os tempos"""
-        lista = []
+        if not self.guild_id:
+            return []
         
-        for rid, dados in self.recordes.items():
+        stats = get_recruitment_stats(self.guild_id)
+        records = stats.get('records', {})
+        
+        lista = []
+        for rid, dados in records.items():
             lista.append({
                 "id": rid,
                 "nome": dados["nome"],
@@ -233,68 +167,22 @@ class GerenciadorRecrutadores:
                 "mes": dados["mes"]
             })
         
-        # Ordenar por total (maior primeiro)
         lista.sort(key=lambda x: x["total"], reverse=True)
         return lista[:limite]
     
-    def get_recordista_geral(self):
-        """Retorna o recordista geral (maior número em um único mês)"""
-        recordes = self.get_recordes_gerais(1)
-        return recordes[0] if recordes else None
-    
-    def marcar_como_pago(self, recruta_id):
-        """Marca um recruta como pago"""
-        recruta_id = str(recruta_id)
-        if recruta_id in self.recrutas:
-            self.recrutas[recruta_id]["pago"] = True
-            self.salvar_dados()
-            return True
-        return False
-    
-    def get_recrutas_por_recrutador(self, recrutador_id):
-        """Retorna lista de recrutas de um recrutador específico"""
-        recrutador_id = str(recrutador_id)
-        recrutas_lista = []
-        
-        for r_id, dados in self.recrutas.items():
-            if dados["recrutador_id"] == recrutador_id:
-                recrutas_lista.append({
-                    "id": r_id,
-                    "nome": dados["nome"],
-                    "pago": dados["pago"],
-                    "data": dados["data"]
-                })
-        
-        # Ordenar por data (mais recente primeiro)
-        recrutas_lista.sort(key=lambda x: x["data"], reverse=True)
-        return recrutas_lista
-    
-    def get_top_recrutadores(self, limite=10):
-        """Retorna os top recrutadores do mês atual"""
-        lista = []
-        for rid, dados in self.recrutadores.items():
-            if dados["total"] > 0:  # Só mostra quem tem recrutas
-                lista.append({
-                    "id": rid,
-                    "nome": dados["nome"],
-                    "total": dados["total"]
-                })
-        
-        # Ordenar por total (maior primeiro)
-        lista.sort(key=lambda x: x["total"], reverse=True)
-        return lista
-    
     def get_total_geral(self):
         """Retorna total de recrutamentos de todos os tempos"""
-        return len(self.recrutas)
+        if not self.guild_id:
+            return 0
+        stats = get_recruitment_stats(self.guild_id)
+        return len(stats.get('recruits', {}))
     
     def get_total_recrutadores(self):
         """Retorna número de recrutadores ativos no mês atual"""
-        return len([r for r in self.recrutadores.values() if r["total"] > 0])
-    
-    def get_total_geral_mes(self):
-        """Retorna total de recrutamentos do mês atual"""
-        return sum(r["total"] for r in self.recrutadores.values())
+        if not self.guild_id:
+            return 0
+        top = self.get_top_recrutadores()
+        return len(top)
 
 # ========== VIEW DO PAINEL PRINCIPAL COM PAGINAÇÃO ==========
 class PainelRecView(ui.View):
@@ -558,8 +446,10 @@ class RecrutadorSelect(ui.Select):
         
         # Buscar nome do recrutador
         recrutador_nome = "Desconhecido"
-        if recrutador_id in self.gerenciador.recrutadores:
-            recrutador_nome = self.gerenciador.recrutadores[recrutador_id]["nome"]
+        stats = get_recruitment_stats(self.gerenciador.guild_id)
+        recruiters = stats.get('recruiters', {})
+        if recrutador_id in recruiters:
+            recrutador_nome = recruiters[recrutador_id].get("nome", "Desconhecido")
         
         # Criar view de recrutas
         view_recrutas = RecrutasPagosView(self.gerenciador, recrutador_id, recrutador_nome, recrutador_member)
@@ -773,7 +663,7 @@ class PainelRecCog(commands.Cog, name="PainelRec"):
     
     def __init__(self, bot):
         self.bot = bot
-        self.gerenciador = GerenciadorRecrutadores()
+        self.gerenciador = GerenciadorRecrutadores()  # Sem guild_id inicial
         self.paineis_ativos = {}  # {guild_id: {"canal_id": canal_id, "mensagem_id": mensagem_id}}
         print("✅ Módulo PainelRec carregado!")
     
@@ -823,14 +713,42 @@ class PainelRecCog(commands.Cog, name="PainelRec"):
         except:
             pass
     
+    async def atualizar_paineis_do_guild(self, guild_id: int):
+        """Atualiza todos os painéis de um servidor específico"""
+        self.gerenciador.set_guild(guild_id)
+        self.gerenciador.verificar_novo_mes()
+        
+        guild_key = str(guild_id)
+        if guild_key not in self.paineis_ativos:
+            return
+        
+        dados = self.paineis_ativos[guild_key]
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            return
+        
+        canal = guild.get_channel(dados["canal_id"])
+        if not canal:
+            return
+        
+        try:
+            mensagem = await canal.fetch_message(dados["mensagem_id"])
+            self.gerenciador.set_guild(guild_id)
+            view = PainelRecView(self.gerenciador)
+            embed = view.criar_embed_pagina(guild, 0)
+            await mensagem.edit(embed=embed, view=view)
+            print(f"  ✅ Painel atualizado em #{canal.name}")
+        except Exception as e:
+            print(f"  ❌ Erro ao atualizar painel: {e}")
+            del self.paineis_ativos[guild_key]
+            self.salvar_paineis()
+    
     def adicionar_recrutamento(self, recrutador_id, recrutador_nome, recruta_id, recruta_nome):
-        """Método público para outros módulos adicionarem recrutamentos"""
-        resultado = self.gerenciador.adicionar_recrutamento(recrutador_id, recrutador_nome, recruta_id, recruta_nome)
-        
-        if resultado:
-            asyncio.create_task(self.atualizar_todos_paineis())
-        
-        return resultado
+        """Método público para outros módulos adicionarem recrutamentos (compatibilidade)"""
+        # Este método é mantido para compatibilidade, mas não é mais necessário
+        # pois o SetsCog já salva diretamente na memória
+        print(f"⚠️ adicionar_recrutamento chamado diretamente (modo legado)")
+        return True
     
     async def atualizar_todos_paineis(self):
         """Atualiza todos os painéis ativos"""
@@ -848,6 +766,8 @@ class PainelRecCog(commands.Cog, name="PainelRec"):
                 try:
                     mensagem = await canal.fetch_message(dados["mensagem_id"])
                     # Criar nova view com página resetada
+                    self.gerenciador.set_guild(int(guild_id))
+                    self.gerenciador.verificar_novo_mes()
                     view = PainelRecView(self.gerenciador)
                     embed = view.criar_embed_pagina(guild, 0)
                     await mensagem.edit(embed=embed, view=view)
@@ -879,6 +799,9 @@ class PainelRecCog(commands.Cog, name="PainelRec"):
     async def criar_novo_painel(self, ctx):
         """Cria um novo painel no canal"""
         
+        self.gerenciador.set_guild(ctx.guild.id)
+        self.gerenciador.verificar_novo_mes()
+        
         view = PainelRecView(self.gerenciador)
         embed = view.criar_embed_pagina(ctx.guild, 0)
         
@@ -901,6 +824,8 @@ class PainelRecCog(commands.Cog, name="PainelRec"):
     @commands.has_permissions(administrator=True)
     async def rec_stats(self, ctx):
         """📊 Mostra estatísticas detalhadas"""
+        
+        self.gerenciador.set_guild(ctx.guild.id)
         
         total_geral = self.gerenciador.get_total_geral()
         total_mes = self.gerenciador.get_total_geral_mes()
@@ -994,10 +919,19 @@ class ConfirmaResetView(ui.View):
         
         await interaction.response.defer()
         
-        self.cog.gerenciador.recrutadores = {}
-        self.cog.gerenciador.recrutas = {}
-        self.cog.gerenciador.salvar_dados()
+        # Resetar na memória
+        from utils.memory import load_all_data, save_all_data
+        data = load_all_data()
+        guild_key = str(self.ctx.guild.id)
         
+        if guild_key in data and 'recruitments' in data[guild_key]:
+            # Manter recordes mas resetar contadores mensais
+            data[guild_key]['recruitments']['recruiters'] = {}
+            data[guild_key]['recruitments']['recruits'] = {}
+            data[guild_key]['recruitments']['monthly_history'] = {}
+            save_all_data(data)
+        
+        self.cog.gerenciador.set_guild(self.ctx.guild.id)
         await self.cog.atualizar_todos_paineis()
         
         await interaction.message.delete()
