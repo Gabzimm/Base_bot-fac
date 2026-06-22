@@ -6,7 +6,7 @@ from datetime import datetime
 import re
 
 # ========== IMPORTS DO SISTEMA DE MEMÓRIA ==========
-from utils.memory import save_recruitment
+from utils.memory import save_recruitment, load_guild_data, save_guild_data
 
 # ========== CONFIGURAÇÃO ==========
 STAFF_ROLES = [
@@ -24,7 +24,7 @@ STAFF_ROLES = [
     "🎖️ | Sub Elite",
 ]
 
-# Dicionário compartilhado com main.py
+# Dicionário compartilhado
 canais_aprovacao = {}
 
 def usuario_pode_aprovar(member: discord.Member) -> bool:
@@ -132,13 +132,12 @@ class SetStaffView(ui.View):
             if self.recrutador_nome:
                 embed.description += f"\n✅ **Recrutado por:** {self.recrutador_nome}"
             
-            # ========== NOVO: Atualizar painel via sistema de memória ==========
+            # Atualizar painel via sistema de memória
             if self.recrutador_id and self.recrutador_nome:
                 try:
                     painel_cog = interaction.client.get_cog("PainelRec")
                     if painel_cog:
                         await painel_cog.atualizar_paineis_do_guild(interaction.guild.id)
-                        print(f"🔄 Painel atualizado após aprovação de set por {interaction.user.name}")
                 except Exception as e:
                     print(f"⚠️ Erro ao atualizar painel: {e}")
             
@@ -269,7 +268,7 @@ class SetForm(ui.Modal, title="📝 Pedido de Set"):
                 await interaction.followup.send("❌ Canal de aprovação não encontrado!", ephemeral=True)
                 return
             
-            # Verificar se ID já existe em pedidos PENDENTES (não aprovados)
+            # Verificar se ID já existe em pedidos PENDENTES
             async for message in canal.history(limit=200):
                 if message.embeds and "Aguardando aprovação" in (message.embeds[0].description or ""):
                     for embed in message.embeds:
@@ -280,12 +279,11 @@ class SetForm(ui.Modal, title="📝 Pedido de Set"):
             # Processar recrutador
             recrutador_member = buscar_usuario_por_id_fivem(interaction.guild, self.recrutador.value)
             
-            # SE NÃO ENCONTRAR O RECRUTADOR, DAR ERRO
             if not recrutador_member:
                 await interaction.followup.send(f"❌ Não existe um recrutador com o ID `{self.recrutador.value}` no servidor!", ephemeral=True)
                 return
             
-            # Se encontrou, processa normalmente
+            # Pegar nome do recrutador
             recrutador_nome = None
             if recrutador_member.nick:
                 partes = recrutador_member.nick.split(' | ')
@@ -293,7 +291,7 @@ class SetForm(ui.Modal, title="📝 Pedido de Set"):
             else:
                 recrutador_nome = recrutador_member.name
 
-            # ========== NOVO: Salvar na memória persistente ==========
+            # Salvar na memória persistente
             sucesso = save_recruitment(
                 interaction.guild.id,
                 recrutador_member.id,
@@ -303,17 +301,14 @@ class SetForm(ui.Modal, title="📝 Pedido de Set"):
             )
             
             if sucesso:
-                print(f"✅ Recrutamento salvo na memória: {recrutador_nome} → {interaction.user.name}")
-                
-                # Atualizar painel se estiver carregado
+                print(f"✅ Recrutamento salvo: {recrutador_nome} → {interaction.user.name}")
+                # Atualizar painel
                 try:
                     painel_cog = interaction.client.get_cog("PainelRec")
                     if painel_cog:
                         await painel_cog.atualizar_paineis_do_guild(interaction.guild.id)
                 except Exception as e:
                     print(f"⚠️ Erro ao atualizar painel: {e}")
-            else:
-                print(f"⚠️ Recrutamento NÃO salvo (possível duplicata): {recrutador_nome} → {interaction.user.name}")
             
             descricao = (
                 f"**👤 Discord:** {interaction.user.mention}\n"
@@ -378,7 +373,16 @@ class SetsCog(commands.Cog, name="Sets"):
     
     @commands.Cog.listener()
     async def on_ready(self):
-        """Apenas log quando o bot estiver pronto"""
+        """Carrega canais de aprovação salvos quando o bot estiver pronto"""
+        for guild in self.bot.guilds:
+            canal_id = load_guild_data(guild.id, "canal_aprovacao")
+            if canal_id:
+                canais_aprovacao[guild.id] = canal_id
+                canal = guild.get_channel(canal_id)
+                if canal:
+                    print(f"📋 Canal de aprovação carregado: {guild.name} -> #{canal.name}")
+                else:
+                    print(f"⚠️ Canal de aprovação {canal_id} não encontrado em {guild.name}")
         print("✅ Sets cog pronto!")
     
     @commands.command(name="aprovamento", aliases=["aprov"])
@@ -388,7 +392,11 @@ class SetsCog(commands.Cog, name="Sets"):
         if not canal:
             canal = ctx.channel
         
+        # Salvar no dicionário em memória
         canais_aprovacao[ctx.guild.id] = canal.id
+        
+        # Salvar no sistema de memória persistente
+        save_guild_data(ctx.guild.id, "canal_aprovacao", canal.id)
         
         embed = discord.Embed(
             title="✅ Canal de Aprovação Definido",
